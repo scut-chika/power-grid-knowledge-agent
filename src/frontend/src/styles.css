@@ -1,0 +1,124 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Sora', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-400: oklch(0.72 0.14 175);
+  --color-brand-500: oklch(0.62 0.14 175);
+  --color-brand-600: oklch(0.52 0.13 175);
+  --color-brand-950: oklch(0.22 0.04 175);
+
+  --color-surface-50: oklch(0.985 0.004 250);
+  --color-surface-100: oklch(0.965 0.006 250);
+  --color-surface-200: oklch(0.92 0.01 250);
+  --color-ink-700: oklch(0.38 0.02 260);
+  --color-ink-900: oklch(0.22 0.02 260);
+
+  --shadow-soft: 0 24px 80px -32px oklch(0.35 0.04 260 / 0.35);
+  --shadow-glass: 0 8px 32px oklch(0.2 0.02 260 / 0.08);
+}
+
+@layer base {
+  html {
+    @apply h-full antialiased;
+  }
+
+  body {
+    @apply m-0 h-full overflow-hidden bg-surface-100 text-ink-900 font-sans text-[16px] leading-relaxed dark:bg-neutral-950 dark:text-neutral-100;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  #root {
+    @apply h-full min-h-0 overflow-hidden;
+  }
+
+  ::selection {
+    @apply bg-brand-500/25 text-ink-900;
+  }
+}
+
+/* Ant Design alignment with design tokens */
+.ant-layout-sider {
+  background: transparent !important;
+}
+
+.ant-menu-dark,
+.ant-menu-dark.ant-menu-inline {
+  background: transparent !important;
+  border-inline-end: none !important;
+}
+
+.ant-menu-dark .ant-menu-item {
+  border-radius: 10px;
+  margin-block: 4px;
+  height: 44px !important;
+  line-height: 44px !important;
+}
+
+.ant-menu-dark .ant-menu-item-selected {
+  background: oklch(0.32 0.01 260 / 0.85) !important;
+}
+
+.ant-card {
+  border-radius: 16px !important;
+  border: 1px solid oklch(0.9 0.006 260) !important;
+  box-shadow: var(--shadow-glass) !important;
+  background: oklch(1 0 0 / 0.72) !important;
+  backdrop-filter: blur(12px);
+}
+
+.ant-modal .ant-modal-content {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-outlined,
+.ant-select-selector {
+  border-radius: 12px !important;
+}
+
+.ant-btn {
+  border-radius: 12px !important;
+  min-height: 40px;
+}
+
+.ant-btn-lg {
+  min-height: 44px;
+}
+
+/* 系统设置：Card 头固定，仅 body 内分区滚动 */
+.settings-card-shell.ant-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-card-shell .ant-card-head {
+  flex-shrink: 0;
+}
+
+.settings-card-shell .ant-card-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Subtle page grain (non-interactive) */
+.app-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 50;
+}
