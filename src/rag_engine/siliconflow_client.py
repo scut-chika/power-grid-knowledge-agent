@@ -69,7 +69,7 @@ def rerank_documents(query: str, documents: list[str], top_n: int) -> list[dict]
 
     if not (api_key and model_name):
         return [
-            {'index': idx, 'relevance_score': 0.5, 'document': doc}
+            {'index': idx, 'relevance_score': 0.5, 'document': doc, 'provider': 'fallback'}
             for idx, doc in enumerate(documents[:top_n])
         ]
 
@@ -92,7 +92,7 @@ def rerank_documents(query: str, documents: list[str], top_n: int) -> list[dict]
             data = response.json()
     except Exception:
         return [
-            {'index': idx, 'relevance_score': 0.5, 'document': doc}
+            {'index': idx, 'relevance_score': 0.5, 'document': doc, 'provider': 'fallback'}
             for idx, doc in enumerate(documents[:top_n])
         ]
 
@@ -102,11 +102,18 @@ def rerank_documents(query: str, documents: list[str], top_n: int) -> list[dict]
         idx = int(item.get('index', 0))
         score = float(item.get('relevance_score', item.get('score', 0)))
         if 0 <= idx < len(documents):
-            normalized.append({'index': idx, 'relevance_score': score, 'document': documents[idx]})
+            normalized.append(
+                {
+                    'index': idx,
+                    'relevance_score': score,
+                    'document': documents[idx],
+                    'provider': 'api',
+                }
+            )
 
     if not normalized:
         return [
-            {'index': idx, 'relevance_score': 0.5, 'document': doc}
+            {'index': idx, 'relevance_score': 0.5, 'document': doc, 'provider': 'fallback'}
             for idx, doc in enumerate(documents[:top_n])
         ]
     return normalized

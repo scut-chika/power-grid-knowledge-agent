@@ -1,28 +1,31 @@
 """
 端到端测试：PDF → 解析 → 分块 → Embedding → 写入 zvec → 向量检索
 """
+import argparse
 import json
 import sys
-import io
 from pathlib import Path
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.backend.core.db import init_db
 from src.knowledge_base.preprocess.parsers import parse_pdf, split_chunks
 from src.knowledge_base.vector_store.zvec_store import build_vectors, query_vectors
 
-PDF_PATH = r"c:\Users\Administrator\Documents\xwechat_files\wxid_ntygnk6jd4f022_987b\msg\file\2026-04\南瑞继保66kV及以下站用变保护装置PCS-9621GA(-DG)-N技术说明书V2.00.pdf"
-
-
 def main():
+    parser = argparse.ArgumentParser(description='Run a local PDF-to-zvec smoke test.')
+    parser.add_argument('--pdf', type=Path, required=True, help='Path to an authorized PDF document.')
+    args = parser.parse_args()
+    pdf_path = args.pdf.resolve()
+    if not pdf_path.is_file():
+        parser.error(f'PDF not found: {pdf_path}')
+
     init_db()
 
     print("=" * 60)
     print("Step 1: 解析 PDF")
     print("=" * 60)
-    text = parse_pdf(PDF_PATH)
+    text = parse_pdf(str(pdf_path))
     print(f"  提取文本长度: {len(text)} 字符")
     print(f"  前 200 字符预览:\n  {text[:200]}\n")
 
@@ -42,7 +45,7 @@ def main():
             'chunk_id': chunk_id,
             'text': c,
             'metadata': {
-                'file_name': Path(PDF_PATH).name,
+                'file_name': pdf_path.name,
                 'station_name': '测试站',
                 'category': '技术说明书',
             },

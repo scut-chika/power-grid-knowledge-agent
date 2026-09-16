@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,19 +15,9 @@ from src.backend.core.runtime_config import get_merged_config_for_api
 
 logger = get_logger(__name__)
 
-app = FastAPI(title=settings.system_name, version=settings.system_version)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
-)
-
-
-@app.on_event('startup')
-def startup_event() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     init_db()
     try:
         cfg = get_merged_config_for_api()
@@ -37,6 +29,18 @@ def startup_event() -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning('启动时读取合并配置失败: %s', exc)
+    yield
+
+
+app = FastAPI(title=settings.system_name, version=settings.system_version, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
 
 
 @app.get('/health')

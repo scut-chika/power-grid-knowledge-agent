@@ -1,13 +1,15 @@
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+
     system_name: str = '基于AI的电网运行知识图谱智能体系统'
     system_version: str = 'v1.0'
-    secret_key: str = 'replace-with-random-secret'
+    secret_key: str = 'replace-with-a-random-secret-at-least-32-bytes'
     debug: bool = False
 
     llm_type: str = 'openai'
@@ -32,17 +34,22 @@ class Settings(BaseSettings):
     neo4j_uri: str = 'bolt://localhost:7687'
     neo4j_username: str = 'neo4j'
     neo4j_password: str = 'your-neo4j-password'
-    neo4j_database: str = 'power_grid_knowledge'
+    neo4j_database: str = 'neo4j'
 
     zvec_data_dir: str = './data/cache/zvec_store'
     zvec_collection_name: str = 'power_grid_knowledge'
+    sparse_index_path: str = './data/cache/bm25_index.json'
 
     sqlite_db_path: str = './data/meta.db'
 
     retrieve_top_n: int = 20
+    sparse_retrieve_top_n: int = 20
     rerank_top_n: int = 10
+    hybrid_rrf_k: int = 60
     similarity_threshold: float = 0.7
     max_context_token: int = 4096
+    chunk_size: int = 800
+    chunk_overlap: int = 120
 
     cors_origins_raw: str = Field(
         default=(
@@ -51,10 +58,6 @@ class Settings(BaseSettings):
         ),
         alias='CORS_ORIGINS',
     )
-
-    class Config:
-        env_file = '.env'
-        extra = 'ignore'
 
     @property
     def cors_origins(self) -> list[str]:

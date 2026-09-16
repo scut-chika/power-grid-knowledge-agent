@@ -25,10 +25,23 @@ def build_llm_messages(query: str, refs: list[dict], attachment_excerpt: str | N
         attach = f"\n\n【用户本次附带的文档节选】\n{excerpt}\n"
 
     if refs:
-        knowledge = '\n'.join([f"[{i+1}] {r.get('content', '')}" for i, r in enumerate(refs[:8])])
+        knowledge_blocks = []
+        for index, reference in enumerate(refs[:8], start=1):
+            metadata = reference.get('metadata') or {}
+            source = reference.get('source') or metadata.get('file_name') or 'unknown'
+            location = ''
+            if metadata.get('page_number'):
+                location = f"，第 {metadata['page_number']} 页"
+            elif metadata.get('section'):
+                location = f"，章节：{metadata['section']}"
+            knowledge_blocks.append(
+                f"[{index}] 来源：{source}{location}\n内容：{reference.get('content', '')}"
+            )
+        knowledge = '\n\n'.join(knowledge_blocks)
         prompt = (
-            "你是电网运行知识助手。请优先基于给定知识片段回答，语言专业且简洁。"
-            "若片段不足可做合理补充，但必须明确说明“以下为通用建议”。"
+            "你是电网运行知识助手。请严格基于给定知识片段回答，语言专业且简洁，"
+            "并在对应结论后使用 [1]、[2] 格式标注来源。"
+            "若证据不足，请明确说明缺少哪些信息；不得编造具体定值、设备状态或现场操作步骤。"
             f"{attach}\n\n用户问题：{query}\n\n知识片段：\n{knowledge}"
         )
     else:

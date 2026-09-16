@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +8,10 @@ from src.backend.core.config import settings
 from src.backend.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _connect() -> sqlite3.Connection:
@@ -102,7 +106,7 @@ def init_db() -> None:
     if cur.fetchone()['cnt'] == 0:
         cur.execute(
             'INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)',
-            ('admin', hash_password('admin123'), 'admin', datetime.utcnow().isoformat()),
+            ('admin', hash_password('admin123'), 'admin', _utc_now()),
         )
 
     default_config = {
@@ -121,7 +125,7 @@ def init_db() -> None:
         'rerank_top_n': str(settings.rerank_top_n),
         'similarity_threshold': str(settings.similarity_threshold),
     }
-    now = datetime.utcnow().isoformat()
+    now = _utc_now()
     for key, value in default_config.items():
         val = '' if value is None else str(value)
         if val.strip() == '':
@@ -150,12 +154,54 @@ def create_file_record(file_name: str, file_type: str, station_name: str | None,
     cur = conn.cursor()
     cur.execute(
         'INSERT INTO files (file_name, file_type, station_name, metadata_json, created_at) VALUES (?, ?, ?, ?, ?)',
-        (file_name, file_type, station_name, json.dumps(metadata, ensure_ascii=False), datetime.utcnow().isoformat()),
+        (file_name, file_type, station_name, json.dumps(metadata, ensure_ascii=False), _utc_now()),
     )
     conn.commit()
     rid = cur.lastrowid
     conn.close()
     return int(rid)
+
+
+def ensure_file_record(file_name: str, file_type: str, station_name: str | None, metadata: dict[str, Any]) -> int:
+    """Create or refresh a file row without duplicating an uploaded document."""
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(
+        'SELECT id, metadata_json FROM files WHERE file_name = ? AND file_type = ? ORDER BY id DESC',
+        (file_name, file_type),
+    )
+    rows = cur.fetchall()
+    target_path = str(metadata.get('path') or '')
+    existing = None
+    for row in rows:
+        try:
+            current_metadata = json.loads(row['metadata_json'] or '{}')
+        except json.JSONDecodeError:
+            current_metadata = {}
+        if not target_path or str(current_metadata.get('path') or '') == target_path:
+            existing = (row, current_metadata)
+            break
+
+    now = _utc_now()
+    if existing:
+        row, current_metadata = existing
+        merged_metadata = {**current_metadata, **metadata}
+        cur.execute(
+            'UPDATE files SET station_name = ?, metadata_json = ? WHERE id = ?',
+            (station_name, json.dumps(merged_metadata, ensure_ascii=False), row['id']),
+        )
+        record_id = int(row['id'])
+    else:
+        cur.execute(
+            'INSERT INTO files (file_name, file_type, station_name, metadata_json, created_at) '
+            'VALUES (?, ?, ?, ?, ?)',
+            (file_name, file_type, station_name, json.dumps(metadata, ensure_ascii=False), now),
+        )
+        record_id = int(cur.lastrowid)
+
+    conn.commit()
+    conn.close()
+    return record_id
 
 
 def list_files(file_type: str | None = None, page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
@@ -176,7 +222,7 @@ def list_files(file_type: str | None = None, page: int = 1, page_size: int = 20)
 
 
 def upsert_build_task(task_id: str, mode: str, status: str, progress: int, logs: str, report: dict[str, Any] | None = None) -> None:
-    now = datetime.utcnow().isoformat()
+    now = _utc_now()
     conn = _connect()
     cur = conn.cursor()
     cur.execute(
@@ -223,7 +269,7 @@ def get_all_config() -> dict[str, str]:
 def update_config(items: dict[str, str]) -> None:
     conn = _connect()
     cur = conn.cursor()
-    now = datetime.utcnow().isoformat()
+    now = _utc_now()
     for k, v in items.items():
         raw = '' if v is None else str(v)
         if raw.strip() == '':
@@ -244,7 +290,10 @@ def update_config(items: dict[str, str]) -> None:
 def save_session(session_id: str, user_id: str) -> None:
     conn = _connect()
     cur = conn.cursor()
-    cur.execute('INSERT OR IGNORE INTO chat_sessions (session_id, user_id, created_at) VALUES (?, ?, ?)', (session_id, user_id, datetime.utcnow().isoformat()))
+    cur.execute(
+        'INSERT OR IGNORE INTO chat_sessions (session_id, user_id, created_at) VALUES (?, ?, ?)',
+        (session_id, user_id, _utc_now()),
+    )
     conn.commit()
     conn.close()
 
@@ -263,7 +312,7 @@ def save_message(session_id: str, role: str, content: str, citations: list[dict[
     cur = conn.cursor()
     cur.execute(
         'INSERT INTO chat_messages (session_id, role, content, citations_json, created_at) VALUES (?, ?, ?, ?, ?)',
-        (session_id, role, content, json.dumps(citations, ensure_ascii=False) if citations else None, datetime.utcnow().isoformat()),
+        (session_id, role, content, json.dumps(citations, ensure_ascii=False) if citations else None, _utc_now()),
     )
     conn.commit()
     conn.close()

@@ -17,10 +17,43 @@ type CitationItem = {
   source?: string
   content?: string
   score?: number
-  metadata?: Record<string, any>
+  retrieval_channels?: string[]
+  metadata?: {
+    file_name?: string
+    page_number?: number
+    section?: string
+    row_start?: number
+    row_end?: number
+    retrieval_channels?: string[]
+    reranker?: string
+    [key: string]: unknown
+  }
 }
 
 type SessionRow = { session_id: string; user_id?: string; created_at?: string | null }
+
+const RETRIEVAL_CHANNEL_LABELS: Record<string, string> = {
+  dense: '语义召回',
+  sparse: '关键词召回',
+  graph: '图谱召回',
+}
+
+function citationLocation(citation: CitationItem): string {
+  const metadata = citation.metadata
+  if (metadata?.page_number) return `p.${metadata.page_number}`
+  if (metadata?.section) return metadata.section
+  if (metadata?.row_start) {
+    return metadata.row_end && metadata.row_end !== metadata.row_start
+      ? `第 ${metadata.row_start}–${metadata.row_end} 行`
+      : `第 ${metadata.row_start} 行`
+  }
+  return ''
+}
+
+function citationChannels(citation: CitationItem): string[] {
+  const channels = citation.retrieval_channels || citation.metadata?.retrieval_channels || []
+  return channels.map((channel) => RETRIEVAL_CHANNEL_LABELS[channel] || channel)
+}
 
 function loadStoredSessionId(): string {
   const saved = localStorage.getItem(CHAT_SESSION_KEY)
@@ -498,15 +531,16 @@ export default function ChatPage() {
                               引用
                             </div>
                             <Space wrap size={[8, 8]}>
-                              {item.citations.map((c: any, idx: number) => {
+                              {item.citations.map((c: CitationItem, idx: number) => {
                                 const source = c.source || c.metadata?.file_name || `来源${idx + 1}`
+                                const location = citationLocation(c)
                                 return (
                                   <Tag
                                     key={`${source}-${idx}`}
                                     className="!m-0 !cursor-pointer !rounded-lg !border-brand-500/25 !bg-brand-500/10 !px-2.5 !py-0.5 !text-brand-950 hover:!border-brand-500/40 dark:!text-brand-200"
                                     onClick={() => openCitation(c, item.question || '')}
                                   >
-                                    {source}
+                                    {source}{location ? ` · ${location}` : ''}
                                   </Tag>
                                 )
                               })}
@@ -607,9 +641,25 @@ export default function ChatPage() {
         classNames={{ body: '!pt-2' }}
       >
         <Space direction="vertical" className="w-full" size="middle">
-          <Tag className="!m-0 !rounded-lg !border-purple-200 !bg-purple-50 !text-purple-900 dark:!border-purple-500/30 dark:!bg-purple-950/40 dark:!text-purple-200">
-            问题关键词高亮
-          </Tag>
+          <Space wrap size={[8, 8]}>
+            {citationLocation(activeCitation || {}) ? (
+              <Tag className="!m-0 !rounded-lg">位置：{citationLocation(activeCitation || {})}</Tag>
+            ) : null}
+            {citationChannels(activeCitation || {}).map((channel) => (
+              <Tag
+                key={channel}
+                className="!m-0 !rounded-lg !border-brand-500/25 !bg-brand-500/10 !text-brand-950 dark:!text-brand-200"
+              >
+                {channel}
+              </Tag>
+            ))}
+            {typeof activeCitation?.score === 'number' ? (
+              <Tag className="!m-0 !rounded-lg">综合得分：{activeCitation.score.toFixed(3)}</Tag>
+            ) : null}
+            <Tag className="!m-0 !rounded-lg !border-purple-200 !bg-purple-50 !text-purple-900 dark:!border-purple-500/30 dark:!bg-purple-950/40 dark:!text-purple-200">
+              问题关键词高亮
+            </Tag>
+          </Space>
           <Typography.Paragraph className="!mb-0 !whitespace-pre-wrap !leading-relaxed">
             {renderHighlighted(activeCitation?.content || '暂无片段内容', queryKeywords)}
           </Typography.Paragraph>

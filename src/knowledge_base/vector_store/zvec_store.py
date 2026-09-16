@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import shutil
 from pathlib import Path
 
@@ -85,6 +84,17 @@ def _create_collection(dimension: int):
 def build_vectors(chunks: list[dict]) -> dict:
     """Embed text chunks and store them in zvec. Replaces any existing collection."""
     if not chunks:
+        global _collection_handle
+        data_dir = _get_data_dir()
+        if data_dir.exists():
+            if _collection_handle is not None:
+                try:
+                    _collection_handle.destroy()
+                except Exception:
+                    shutil.rmtree(data_dir, ignore_errors=True)
+            else:
+                shutil.rmtree(data_dir, ignore_errors=True)
+        _collection_handle = None
         return {'vector_count': 0, 'status': 'empty', 'provider': settings.embedding_provider}
 
     vectors = embed_texts([c['text'] for c in chunks])
@@ -94,12 +104,13 @@ def build_vectors(chunks: list[dict]) -> dict:
 
     docs = []
     for c, v in zip(chunks, vectors):
+        metadata = {'chunk_id': c['chunk_id'], **c.get('metadata', {})}
         docs.append(
             zvec.Doc(
                 id=c['chunk_id'],
                 fields={
                     'text': c['text'],
-                    'metadata': json.dumps(c['metadata'], ensure_ascii=False),
+                    'metadata': json.dumps(metadata, ensure_ascii=False),
                 },
                 vectors={'embedding': v},
             )
@@ -118,7 +129,7 @@ def build_vectors(chunks: list[dict]) -> dict:
 
 
 def query_vectors(query: str, top_n: int = 20) -> list[dict]:
-    """Search vectors by semantic similarity, with keyword fallback."""
+    """Search vectors by semantic similarity."""
     if not _get_data_dir().exists():
         return []
 
@@ -135,7 +146,7 @@ def query_vectors(query: str, top_n: int = 20) -> list[dict]:
 
     try:
         results = coll.query(
-            zvec.VectorQuery('embedding', vector=qvec),
+            zvec.Query('embedding', vector=qvec),
             topk=top_n,
             output_fields=['text', 'metadata'],
             include_vector=False,
@@ -153,60 +164,10 @@ def query_vectors(query: str, top_n: int = 20) -> list[dict]:
                 'metadata': meta,
                 'score': float(hit.score),
                 'source': meta.get('file_name', ''),
+                'retrieval_channel': 'dense',
             })
 
-    if scored:
-        return scored
-
-    return _keyword_fallback(coll, query, qvec, top_n)
-
-
-def _keyword_fallback(coll, query: str, qvec: list[float], top_n: int) -> list[dict]:
-    """Fall back to keyword matching when no vector results exceed the threshold."""
-    try:
-        doc_count = coll.stats.doc_count
-    except Exception:
-        doc_count = 500
-
-    if doc_count == 0:
-        return []
-
-    try:
-        all_results = coll.query(
-            zvec.VectorQuery('embedding', vector=qvec),
-            topk=min(doc_count, 1000),
-            output_fields=['text', 'metadata'],
-            include_vector=False,
-        )
-    except Exception:
-        return []
-
-    q_tokens = [t for t in re.findall(r'[\u4e00-\u9fffA-Za-z0-9]{2,}', query.lower()) if t]
-    expanded: list[str] = []
-    for token in q_tokens:
-        expanded.append(token)
-        if re.search(r'[\u4e00-\u9fff]', token) and len(token) >= 4:
-            expanded.extend(token[i:i + 2] for i in range(len(token) - 1))
-    q_tokens = list(dict.fromkeys(expanded))
-
-    if not q_tokens:
-        return []
-
-    lexical = []
-    for hit in all_results:
-        text = (hit.fields.get('text') or '').lower()
-        hit_count = sum(1 for t in q_tokens if t in text)
-        if hit_count > 0:
-            meta = _parse_metadata(hit.fields.get('metadata'))
-            lexical.append({
-                'content': hit.fields.get('text', ''),
-                'metadata': meta,
-                'score': hit_count / max(1, len(q_tokens)),
-                'source': meta.get('file_name', ''),
-            })
-
-    lexical.sort(key=lambda x: x['score'], reverse=True)
-    return lexical[:top_n]
+    return scored
 
 
 def _parse_metadata(raw: str | None) -> dict:

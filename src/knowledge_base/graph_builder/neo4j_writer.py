@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any
 
 from src.backend.core.config import settings
@@ -15,7 +16,8 @@ logger = get_logger(__name__)
 
 _driver = None
 _driver_lock = threading.Lock()
-_driver_unavailable = False
+_last_connection_failure: float | None = None
+_retry_interval_seconds = 5.0
 
 
 class Neo4jUnavailable(RuntimeError):
@@ -24,12 +26,14 @@ class Neo4jUnavailable(RuntimeError):
 
 def _get_driver():
     """单例获取 GraphDatabase driver。失败抛 Neo4jUnavailable。"""
-    global _driver, _driver_unavailable
+    global _driver, _last_connection_failure
 
     if _driver is not None:
         return _driver
-    if _driver_unavailable:
-        raise Neo4jUnavailable('Neo4j 此前已标记不可用')
+    if _last_connection_failure is not None:
+        elapsed = time.monotonic() - _last_connection_failure
+        if elapsed < _retry_interval_seconds:
+            raise Neo4jUnavailable('Neo4j 暂不可用，等待下一次连接重试')
 
     with _driver_lock:
         if _driver is not None:
@@ -37,7 +41,7 @@ def _get_driver():
         try:
             from neo4j import GraphDatabase
         except ImportError as exc:
-            _driver_unavailable = True
+            _last_connection_failure = time.monotonic()
             raise Neo4jUnavailable(f'neo4j 驱动未安装: {exc}') from exc
 
         try:
@@ -48,10 +52,11 @@ def _get_driver():
             )
             drv.verify_connectivity()
         except Exception as exc:  # noqa: BLE001
-            _driver_unavailable = True
+            _last_connection_failure = time.monotonic()
             raise Neo4jUnavailable(f'Neo4j 连接失败: {exc}') from exc
 
         _driver = drv
+        _last_connection_failure = None
         logger.info('Neo4j driver 已建立: %s', settings.neo4j_uri)
         return _driver
 
@@ -80,14 +85,23 @@ def build_graph(entities: list[dict], relations: list[dict], mode: str = 'increm
     try:
         with _session() as sess:
             if mode == 'full':
-                sess.run('MATCH (n) DETACH DELETE n')
+                # Scope rebuild cleanup to this application's label. Never wipe unrelated Neo4j data.
+                sess.run('MATCH (n:Entity) DETACH DELETE n')
 
             if entities:
-                rows = [{'id': e['id'], 'name': e.get('name', ''), 'type': e.get('type', '')} for e in entities]
+                rows = [
+                    {
+                        'id': e['id'],
+                        'name': e.get('name', ''),
+                        'type': e.get('type', ''),
+                        'source_file': e.get('source_file', ''),
+                    }
+                    for e in entities
+                ]
                 sess.run(
                     'UNWIND $rows AS row '
                     'MERGE (e:Entity {id: row.id}) '
-                    'SET e.name = row.name, e.type = row.type',
+                    'SET e.name = row.name, e.type = row.type, e.source_file = row.source_file',
                     rows=rows,
                 )
 
@@ -141,7 +155,32 @@ def match_entities_by_name(terms: list[str], top_k: int = 5) -> list[dict[str, A
                 'UNWIND $terms AS t '
                 'MATCH (n:Entity) '
                 'WHERE toLower(n.name) CONTAINS toLower(t) '
-                'RETURN DISTINCT n.id AS id, n.name AS name, n.type AS type '
+                'RETURN DISTINCT n.id AS id, n.name AS name, n.type AS type, '
+                'n.source_file AS source_file '
+                'LIMIT $k',
+                terms=list(terms),
+                k=int(top_k),
+            )
+            return [dict(record) for record in result]
+    except Neo4jUnavailable:
+        return []
+
+
+def match_entity_neighborhood(terms: list[str], top_k: int = 5) -> list[dict[str, Any]]:
+    """Match entities and return a compact one-hop neighborhood for Graph RAG."""
+    if not terms:
+        return []
+
+    try:
+        with _session() as sess:
+            result = sess.run(
+                'UNWIND $terms AS t '
+                'MATCH (n:Entity) '
+                'WHERE toLower(n.name) CONTAINS toLower(t) '
+                'OPTIONAL MATCH (n)-[r:REL]-(m:Entity) '
+                'WITH n, collect(DISTINCT {name: m.name, type: m.type, relation: r.type})[..5] AS neighbors '
+                'RETURN DISTINCT n.id AS id, n.name AS name, n.type AS type, '
+                'n.source_file AS source_file, neighbors '
                 'LIMIT $k',
                 terms=list(terms),
                 k=int(top_k),
@@ -151,6 +190,9 @@ def match_entities_by_name(terms: list[str], top_k: int = 5) -> list[dict[str, A
         return []
     except Exception as exc:  # noqa: BLE001
         logger.warning('Neo4j 实体匹配失败: %s', exc)
+        return []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('Neo4j 邻域检索失败: %s', exc)
         return []
 
 

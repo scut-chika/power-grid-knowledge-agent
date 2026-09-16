@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Optional: only required for scanned JPG/PNG/TIFF ingestion.
+paddleocr>=2.7.0.3,<3.0.0

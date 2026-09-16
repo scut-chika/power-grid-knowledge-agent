@@ -3,9 +3,9 @@ from pathlib import Path
 RAW_BASE = Path('data/raw')
 
 SUPPORTED = {
-    'documents': {'.pdf', '.doc', '.docx', '.md', '.txt'},
+    'documents': {'.pdf', '.docx', '.md', '.txt'},
     'tables': {'.xlsx', '.xls', '.csv'},
-    'drawings': {'.pdf', '.dwg'},
+    'drawings': {'.pdf'},
     'scans': {'.jpg', '.jpeg', '.png', '.tiff'},
 }
 

@@ -18,6 +18,7 @@ models/
 *.index*
 *.proxima
 node_modules/
+.npm-cache/
 dist/
 build/
 coverage/

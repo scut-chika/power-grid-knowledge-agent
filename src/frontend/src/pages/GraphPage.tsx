@@ -1,9 +1,14 @@
 import { Card } from 'antd'
-import * as echarts from 'echarts'
+import { GraphChart } from 'echarts/charts'
+import { TooltipComponent } from 'echarts/components'
+import * as echarts from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
 import { motion } from 'framer-motion'
 import { Share2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { getGraph } from '../services/api'
+
+echarts.use([GraphChart, TooltipComponent, CanvasRenderer])
 
 export default function GraphPage() {
   const ref = useRef<HTMLDivElement>(null)
